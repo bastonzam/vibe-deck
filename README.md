@@ -8,9 +8,9 @@
 
 VibeDeck เป็นแอป Android สำหรับรวมเกมเว็บจากผู้สร้าง โดยเฉพาะเกมที่พัฒนาด้วยเครื่องมือ AI และแนวทาง vibe coding ผู้เล่นเปิดเกมจากลิงก์ได้ทันทีผ่าน WebView เต็มจอ เก็บเกมที่ชอบ และร่วมให้คะแนนหรือคอมเมนต์โดยไม่ต้องติดตั้งแต่ละเกมแยกกัน
 
-[ดาวน์โหลด APK ล่าสุด](https://github.com/bastonzam/vibedeck-android/releases/latest) · [ตั้งค่า Firebase](docs/FIREBASE_SETUP.md) · [สร้าง Release](docs/RELEASING.md) · [โครงสร้าง UI](docs/UI_GUIDE.md)
+[ดาวน์โหลด APK ล่าสุด](https://github.com/bastonzam/vibedeck-android/releases/latest/download/vibedeck.apk)
 
-## สำหรับผู้เล่น
+## ฟีเจอร์สำหรับผู้เล่น
 
 ### ค้นพบเกม
 
@@ -55,7 +55,7 @@ VibeDeck เป็นแอป Android สำหรับรวมเกมเ�
 - ถ้า Google Login สำเร็จแต่บันทึกโปรไฟล์ไม่ผ่าน แอปแสดงสถานะ **เข้าสู่ระบบแล้ว** และแจ้งปัญหาโปรไฟล์แยก พร้อม retry โดยไม่เลือกบัญชีใหม่
 - ถ้าโหลด Store ได้เพียงบางส่วน เกมที่โหลดได้ยังแสดงและเล่นได้ พร้อมข้อความอัปเดตเฉพาะส่วน ไม่แสดงเป็นความล้มเหลวทั้งหน้า
 
-## สำหรับผู้พัฒนาเกมเว็บ
+## ฟีเจอร์สำหรับคนทำเกมเว็บ
 
 คัดลอก `sdk/vibedeck.js` ไปเสิร์ฟกับเกม แล้วเรียกจาก JavaScript ได้ทั้งในแอปและเบราว์เซอร์ทั่วไป
 
@@ -127,7 +127,7 @@ cd vibedeck-android
 3. เพิ่มแอป Android package **`app.vibedeck`** ใน Firebase ของคุณ
 4. เปิด Google provider, สร้าง Firestore Database และเพิ่ม SHA-1 ของกุญแจที่ใช้เซ็นแอป
 5. ดาวน์โหลด `google-services.json` วางที่ `app/google-services.json` ไฟล์นี้ไม่ได้เก็บใน Git
-6. Deploy Rules และ indexes ตาม [FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md) แล้ว Sync Gradle
+6. Deploy Firestore Rules และ indexes ก่อนใช้งานฟีเจอร์ออนไลน์ แล้ว Sync Gradle
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
@@ -143,7 +143,7 @@ Linux/macOS ใช้ `bash gradlew :app:assembleDebug` ไฟล์ Debug APK �
 - **Rules / Indexes**: deploy ไฟล์ใน repository
 - Web client ID อ่านจาก resource `default_web_client_id` ที่ Google Services plugin สร้างให้ ไม่ hardcode ใน Kotlin
 
-SHA-1 เป็นลายนิ้วมือของ **กุญแจเซ็นแอป ไม่ใช่มือถือ** APK ที่เซ็นด้วยกุญแจเดียวกันใช้ค่าเดียวกันทุกเครื่อง สำหรับ GitHub Release รุ่นแรกให้ลงทะเบียน Release SHA-1 ที่ระบุใน [RELEASING.md](docs/RELEASING.md) ด้วย
+SHA-1 เป็นลายนิ้วมือของ **กุญแจเซ็นแอป ไม่ใช่มือถือ** APK ที่เซ็นด้วยกุญแจเดียวกันใช้ค่าเดียวกันทุกเครื่อง
 
 ```powershell
 firebase login
@@ -219,11 +219,11 @@ npm test
 .\gradlew.bat :app:lintDebug
 ```
 
-ดูรายการทดสอบ TalkBack, font scale, หมุนจอ และหน้าจอต่าง ๆ ใน [UI_GUIDE.md](docs/UI_GUIDE.md)
+
 
 ## Release APK
 
-ใช้ Release signing key ถาวรและ R8 minification ดูขั้นตอนทั้งหมดที่ [RELEASING.md](docs/RELEASING.md)
+สร้าง Release APK ด้วย Release signing key ถาวรและ R8 minification
 
 ```powershell
 .\gradlew.bat :app:assembleRelease :app:lintRelease
@@ -241,10 +241,3 @@ npm test
 - การเขียนคะแนนรวมลงเอกสารเกมเดียวอาจมี contention เมื่อ traffic สูง
 - Rules ตรวจรูปแบบ hash ID แต่ไม่คำนวณ SHA-256 ของ URL ให้เอง การบังคับ uniqueness กับ client ที่แก้แอปเองอย่างสมบูรณ์ต้องใช้ trusted backend
 - SSO ระหว่างบัญชี VibeDeck กับเกมภายนอกยังเป็นงานต่อไป
-
-## เอกสารเพิ่มเติม
-
-- [Firebase, schema, security rules และ Console setup](docs/FIREBASE_SETUP.md)
-- [Release signing และการแจก APK](docs/RELEASING.md)
-- [UI architecture และ manual test checklist](docs/UI_GUIDE.md)
-- [ประวัติการตรวจสอบ](docs/VERIFICATION.md)
