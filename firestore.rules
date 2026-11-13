@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function gamePath(id) { return /databases/$(database)/documents/games/$(id); }
+    function readableGame(id) {
+      let game = get(gamePath(id)).data;
+      return game.status == 'approved' || (signedIn() && game.submittedBy == request.auth.uid);
+    }
+    function webUrl(value) { return value is string && value.size() <= 4096 && value.matches('https?://[^\\s]+'); }
+    function imageUrl(value) { return value == '' || webUrl(value); }
+    function validTag(tags, i) { return tags.size() <= i || (tags[i] is string && tags[i].size() >= 1 && tags[i].size() <= 24); }
+    function validDetails(d) {
+      return d.title is string && d.title.size() >= 1 && d.title.size() <= 80
+        && d.description is string && d.description.size() <= 500 && imageUrl(d.imageUrl)
+        && d.tags is list && d.tags.size() <= 8
+        && validTag(d.tags, 0) && validTag(d.tags, 1) && validTag(d.tags, 2) && validTag(d.tags, 3)
+        && validTag(d.tags, 4) && validTag(d.tags, 5) && validTag(d.tags, 6) && validTag(d.tags, 7)
+        && d.orientation in ['portrait', 'landscape', 'any'];
+    }
+    function ratingPath(gameId) { return /databases/$(database)/documents/games/$(gameId)/ratings/$(request.auth.uid); }
+    function validAverage(d) {
+      return d.ratingCount is int && d.ratingCount >= 0 && d.ratingSum is int
+        && d.ratingSum >= d.ratingCount && d.ratingSum <= d.ratingCount * 5
+        && d.ratingAvg is number
+        && d.ratingAvg == (d.ratingCount == 0 ? 0 : d.ratingSum * 1.0 / d.ratingCount);
+    }
+    function ratingDeltaValid(gameId) {
+      let path = ratingPath(gameId);
+      let oldValue = exists(path) ? get(path).data.value : 0;
+      let newValue = existsAfter(path) ? getAfter(path).data.value : 0;
+      let before = get(gamePath(gameId)).data;
+      let after = getAfter(gamePath(gameId)).data;
+      return after.ratingSum == before.ratingSum - oldValue + newValue
+        && after.ratingCount == before.ratingCount - (oldValue == 0 ? 0 : 1) + (newValue == 0 ? 0 : 1)
+        && validAverage(after);
+    }
+    function ratingAggregateUpdate(gameId) {
+      return signedIn() && resource.data.status == 'approved'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ratingSum', 'ratingCount', 'ratingAvg', 'updatedAt'])
+        && ratingDeltaValid(gameId);
+    }
+    function commentAggregateUpdate(gameId) {
+      let after = request.resource.data;
+      let id = after.commentMutationId;
+      let path = /databases/$(database)/documents/games/$(gameId)/comments/$(id);
+      return signedIn() && resource.data.status == 'approved'
+        && id is string && id.matches('[A-Za-z0-9_-]{1,128}')
+        && after.diff(resource.data).affectedKeys().hasOnly(['commentCount', 'commentMutationId', 'updatedAt'])
+        && after.commentCount is int && after.commentCount >= 0
+        && ((!exists(path) && existsAfter(path) && getAfter(path).data.uid == request.auth.uid
+            && after.commentCount == resource.data.commentCount + 1)
+          || (exists(path) && !existsAfter(path) && get(path).data.uid == request.auth.uid
+            && after.commentCount == resource.data.commentCount - 1));
+    }
+    function commentParentValid(gameId, commentId, delta) {
+      let before = get(gamePath(gameId)).data;
+      let after = getAfter(gamePath(gameId)).data;
+      return after.commentMutationId == commentId && after.commentCount == before.commentCount + delta
+        && after.updatedAt == request.time;
+    }
+
+    match /users/{uid} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['displayName', 'photoUrl', 'createdAt'])
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 120
+        && imageUrl(request.resource.data.photoUrl) && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoUrl'])
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 120
+        && imageUrl(request.resource.data.photoUrl);
+      allow delete: if false;
+    }
+
+    match /games/{gameId} {
+      // Absent documents must be readable so create-if-absent transactions can check duplicates.
+      allow get: if !exists(gamePath(gameId)) || resource.data.status == 'approved'
+        || (signedIn() && resource.data.submittedBy == request.auth.uid);
+      allow list: if resource.data.status == 'approved';
+      allow create: if signedIn() && gameId.matches('[0-9a-f]{64}')
+        && request.resource.data.keys().hasOnly(['url', 'normalizedUrl', 'host', 'title', 'description', 'imageUrl', 'tags', 'orientation',
+          'submittedBy', 'createdAt', 'updatedAt', 'status', 'ratingSum', 'ratingCount', 'ratingAvg', 'commentCount'])
+        && validDetails(request.resource.data) && webUrl(request.resource.data.url)
+        && request.resource.data.normalizedUrl == request.resource.data.url
+        && request.resource.data.host is string && request.resource.data.host.size() >= 1 && request.resource.data.host.size() <= 253
+        && request.resource.data.submittedBy == request.auth.uid && request.resource.data.status == 'approved'
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && request.resource.data.ratingSum == 0 && request.resource.data.ratingCount == 0
+        && request.resource.data.ratingAvg == 0 && request.resource.data.commentCount is int && request.resource.data.commentCount == 0
+        && validAverage(request.resource.data);
+      allow update: if signedIn() && request.resource.data.updatedAt == request.time && (
+        (resource.data.submittedBy == request.auth.uid && validDetails(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'imageUrl', 'tags', 'orientation', 'updatedAt']))
+        || ratingAggregateUpdate(gameId) || commentAggregateUpdate(gameId));
+      allow delete: if false;
+
+      match /ratings/{uid} {
+        allow read: if readableGame(gameId);
+        allow create, update: if signedIn() && uid == request.auth.uid && readableGame(gameId)
+          && request.resource.data.keys().hasOnly(['value', 'createdAt', 'updatedAt'])
+          && request.resource.data.value is int && request.resource.data.value >= 1 && request.resource.data.value <= 5
+          && request.resource.data.updatedAt == request.time
+          && ((!exists(ratingPath(gameId)) && request.resource.data.createdAt == request.time)
+            || (exists(ratingPath(gameId)) && request.resource.data.createdAt == resource.data.createdAt))
+          && getAfter(gamePath(gameId)).data.updatedAt == request.time && ratingDeltaValid(gameId);
+        allow delete: if signedIn() && uid == request.auth.uid && readableGame(gameId)
+          && getAfter(gamePath(gameId)).data.updatedAt == request.time && ratingDeltaValid(gameId);
+      }
+      match /comments/{commentId} {
+        allow read: if readableGame(gameId);
+        allow create: if signedIn() && readableGame(gameId)
+          && request.resource.data.keys().hasOnly(['uid', 'authorName', 'authorPhotoUrl', 'text', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 500
+          && request.resource.data.authorName == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName
+          && request.resource.data.authorPhotoUrl == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.photoUrl
+          && request.resource.data.createdAt == request.time && commentParentValid(gameId, commentId, 1);
+        allow delete: if signedIn() && readableGame(gameId) && resource.data.uid == request.auth.uid
+          && commentParentValid(gameId, commentId, -1);
+        allow update: if false;
+      }
+    }
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['targetType', 'gameId', 'commentId', 'reporterUid', 'reason', 'createdAt'])
+        && request.resource.data.reporterUid == request.auth.uid && request.resource.data.createdAt == request.time
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 1 && request.resource.data.reason.size() <= 200
+        && request.resource.data.gameId is string && readableGame(request.resource.data.gameId)
+        && ((request.resource.data.targetType == 'game' && !('commentId' in request.resource.data))
+          || (request.resource.data.targetType == 'comment' && request.resource.data.commentId is string
+            && get(/databases/$(database)/documents/games/$(request.resource.data.gameId)/comments/$(request.resource.data.commentId)).data.uid != request.auth.uid));
+      allow read, update, delete: if false;
+    }
+  }
+}
